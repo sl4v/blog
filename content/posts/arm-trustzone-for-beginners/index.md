@@ -1,7 +1,7 @@
 +++
 title = 'ARM TrustZone: A Crash Course for Reversers'
 date = 2023-09-23
-draft = true
+draft = false
 +++
 
 ![ARM TZ](arm-tz.png)

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Slava Moskvin</title>
-    <link>https://slavamoskvin.com/</link>
-    <description>Recent content on Slava Moskvin</description>
+    <title>Posts on Slava Moskvin</title>
+    <link>https://slavamoskvin.com/posts/</link>
+    <description>Recent content in Posts on Slava Moskvin</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 23 Sep 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://slavamoskvin.com/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 23 Sep 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://slavamoskvin.com/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>ARM TrustZone: A Crash Course for Reversers</title>
       <link>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</link>
@@ -15,15 +15,6 @@
       <guid>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</guid>
       <description>1. The Role of NS (Non-Secure) Memory Bits Each memory page in a system comes with a Non-Secure (NS) bit. The &amp;ldquo;Normal World&amp;rdquo; can only access memory with the NS bit set, while the &amp;ldquo;Secure World&amp;rdquo; has unrestricted access to both NS and Secure memory. The NS bit is crucial for compartmentalizing secure and non-secure operations. Learn more about NS memory.
 2. Exception Levels (ELs) ARM CPUs utilize four levels of privileges, known as Exception Levels (ELs).</description>
-    </item>
-    
-    <item>
-      <title>About</title>
-      <link>https://slavamoskvin.com/about/</link>
-      <pubDate>Mon, 01 Jan 0001 00:00:00 +0000</pubDate>
-      
-      <guid>https://slavamoskvin.com/about/</guid>
-      <description>sss</description>
     </item>
     
   </channel>
