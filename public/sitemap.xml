@@ -2,13 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</loc>
-    <lastmod>2023-09-23T00:00:00+00:00</lastmod>
-  </url><url>
     <loc>https://slavamoskvin.com/posts/</loc>
-    <lastmod>2023-09-23T00:00:00+00:00</lastmod>
+    <lastmod>2023-10-31T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://slavamoskvin.com/reverse-engineering-training/</loc>
+    <lastmod>2023-10-31T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://slavamoskvin.com/</loc>
+    <lastmod>2023-10-31T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</loc>
     <lastmod>2023-09-23T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://slavamoskvin.com/categories/</loc>

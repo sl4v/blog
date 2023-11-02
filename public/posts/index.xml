@@ -6,7 +6,17 @@
     <description>Recent content in Posts on Slava Moskvin</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 23 Sep 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://slavamoskvin.com/posts/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Tue, 31 Oct 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://slavamoskvin.com/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Reverse Engineering Training</title>
+      <link>https://slavamoskvin.com/reverse-engineering-training/</link>
+      <pubDate>Tue, 31 Oct 2023 00:00:00 +0000</pubDate>
+      
+      <guid>https://slavamoskvin.com/reverse-engineering-training/</guid>
+      <description>Last week marked a very important milestone for me: I conducted my first offline reverse engineering workshop. It took a lot of effort and energy, but it finally happened! I want to express special thanks to my colleagues without whom this couldn&amp;rsquo;t have happened for the idea, support in organizing and developing the idea further!
+My first attempt at this was 4 years and 3 jobs ago and I’m really proud that after all this years, I managed to implement it exactly how I wanted.</description>
+    </item>
+    
     <item>
       <title>ARM TrustZone: A Crash Course for Reversers</title>
       <link>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</link>
