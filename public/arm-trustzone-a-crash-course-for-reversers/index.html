@@ -97,8 +97,12 @@
 <p><strong><a href="https://developer.arm.com/documentation/100933/0100/AArch64-exception-vector-table">AArch64 Vector Table Format</a></strong></p>
 <h2 id="13-smc-handling"><strong>13. SMC Handling</strong></h2>
 <p>SMC calls are either directly handled by the Secure Monitor or passed to the Trusted OS (more often). The TOS then performs the required operations, like spawning a TA, and returns the results.</p>
+<p>A specific range of SMC functions IDs are passed to the TOS ( lookup Trusted OS Call and Trusted Application Call OEN ranges in ARM SMCCC).</p>
+<p>The interface between the EL3 Runtime Firmware and the Secure-EL1 Payload is not defined by the <a href="http://infocenter.arm.com/help/topic/com.arm.doc.den0028a/index.html">SMCCC</a> or any other standard. That means that a particular bundle SM+TOS is often vendor-specific.</p>
 <h2 id="pro-tips-for-reverse-engineering"><strong>Pro Tips for Reverse Engineering</strong></h2>
 <p>Since TrustZone is widely used in Android phones, much of the drivers are open-source and part of the Android Open Source Project (AOSP). Another excellent resource for diving deep is the <strong><a href="https://github.com/ARM-software/arm-trusted-firmware">ARM Trusted Firmware</a></strong>, which is often used as a base for custom Secure Monitors.</p>
+<p><strong><a href="https://chromium.googlesource.com/external/github.com/ARM-software/arm-trusted-firmware/+/v0.4-rc1/docs/firmware-design.md">ARM Trusted Firmware Design</a></strong> provides an in-depth overview of booting process in ARM CPUs supporting TrustZone, including full boot chain and architectural initialization.</p>
+<p>To navigate in those depths in IDA you&rsquo;ll need an <strong><a href="https://github.com/gdelugre/ida-arm-system-highlight">ARM system register decoding script</a></strong>. Otherwise instead of a neat instruction <code>MSR VBAR_EL3, &lt;Xt&gt;</code>, you&rsquo;ll see a monstrosity like <code>MSR #6, c12, c0, #0, Xt</code>.</p>
 
 </div>
 

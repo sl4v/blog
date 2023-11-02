@@ -73,6 +73,14 @@ When an SMC instruction is triggered, an interrupt occurs which is handled accro
 
 SMC calls are either directly handled by the Secure Monitor or passed to the Trusted OS (more often). The TOS then performs the required operations, like spawning a TA, and returns the results.
 
+A specific range of SMC functions IDs are passed to the TOS ( lookup Trusted OS Call and Trusted Application Call OEN ranges in ARM SMCCC).
+
+The interface between the EL3 Runtime Firmware and the Secure-EL1 Payload is not defined by the [SMCCC](http://infocenter.arm.com/help/topic/com.arm.doc.den0028a/index.html) or any other standard. That means that a particular bundle SM+TOS is often vendor-specific.
+
 ## **Pro Tips for Reverse Engineering**
 
 Since TrustZone is widely used in Android phones, much of the drivers are open-source and part of the Android Open Source Project (AOSP). Another excellent resource for diving deep is the **[ARM Trusted Firmware](https://github.com/ARM-software/arm-trusted-firmware)**, which is often used as a base for custom Secure Monitors.
+
+**[ARM Trusted Firmware Design](https://chromium.googlesource.com/external/github.com/ARM-software/arm-trusted-firmware/+/v0.4-rc1/docs/firmware-design.md)** provides an in-depth overview of booting process in ARM CPUs supporting TrustZone, including full boot chain and architectural initialization.
+
+To navigate in those depths in IDA you'll need an **[ARM system register decoding script](https://github.com/gdelugre/ida-arm-system-highlight)**. Otherwise instead of a neat instruction `MSR VBAR_EL3, <Xt>`, you'll see a monstrosity like `MSR #6, c12, c0, #0, Xt`.
