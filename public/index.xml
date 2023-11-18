@@ -6,26 +6,31 @@
     <description>Recent content on Slava Moskvin</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 31 Oct 2023 00:00:00 +0000</lastBuildDate><atom:link href="https://slavamoskvin.com/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Sat, 18 Nov 2023 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://slavamoskvin.com/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Extracting Firmware: All Methods</title>
+      <link>https://slavamoskvin.com/extracting-firmware-all-methods/</link>
+      <pubDate>Sat, 18 Nov 2023 00:00:00 +0000</pubDate>
+      <guid>https://slavamoskvin.com/extracting-firmware-all-methods/</guid>
+      <description>The first step in finding vulnerabilities in some kind of IoT device is getting its firmware. 5-10 years ago, it was extremely easy: firmware of every device was available on the manufacturer’s website. And while it’s still true in some cases, now there’s no more a one-size-fits-all solution. Now we have several ways of getting firmware, ranging from very easy to very hard.
+Download: Very Easy Maybe the manufacturer still offers firmware for download to everyone in need.</description>
+    </item>
     <item>
       <title>Reverse Engineering Training</title>
       <link>https://slavamoskvin.com/reverse-engineering-training/</link>
       <pubDate>Tue, 31 Oct 2023 00:00:00 +0000</pubDate>
-      
       <guid>https://slavamoskvin.com/reverse-engineering-training/</guid>
       <description>Last week marked a very important milestone for me: I conducted my first offline reverse engineering workshop. It took a lot of effort and energy, but it finally happened! I want to express special thanks to my colleagues without whom this couldn&amp;rsquo;t have happened for the idea, support in organizing and developing the idea further!
 My first attempt at this was 4 years and 3 jobs ago and I’m really proud that after all this years, I managed to implement it exactly how I wanted.</description>
     </item>
-    
     <item>
       <title>ARM TrustZone: A Crash Course for Reversers</title>
       <link>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</link>
       <pubDate>Sat, 23 Sep 2023 00:00:00 +0000</pubDate>
-      
       <guid>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</guid>
       <description>1. The Role of NS (Non-Secure) Memory Bits Each memory page in a system comes with a Non-Secure (NS) bit. The &amp;ldquo;Normal World&amp;rdquo; can only access memory with the NS bit set, while the &amp;ldquo;Secure World&amp;rdquo; has unrestricted access to both NS and Secure memory. The NS bit is crucial for compartmentalizing secure and non-secure operations. Learn more about NS memory.
 2. Exception Levels (ELs) ARM CPUs utilize four levels of privileges, known as Exception Levels (ELs).</description>
     </item>
-    
   </channel>
 </rss>
