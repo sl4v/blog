@@ -15,16 +15,12 @@ theme = 'hyde'
   avatar='/IMG_2021-3-16.jpeg'
   #layoutReverse = true
 
-
-  [[params.social]]
-    icon = "github"
-    name = "GitHub"
-    url = "https://github.com/"
-
-  [[params.social]]
-    icon = "twitter"
-    name = "Twitter"
-    url = "https://twitter.com/"
+[Menus]
+  main = [
+      {Name = "🐦 Twitter", URL = "https://twitter.com/slava_moskvin_"},
+      {Name = "🌐 LinkedIn", URL = "https://www.linkedin.com/in/vyacheslav-moskvin/"},
+      {Name = "🔴 YouTube", URL = "https://www.youtube.com/c/PathCybersecSlavaMoskvin"}
+  ]
 
 [menu]
 # [[menu.main]]
