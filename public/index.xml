@@ -6,31 +6,49 @@
     <description>Recent content on Slava Moskvin</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Sat, 18 Nov 2023 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 10 Sep 2024 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://slavamoskvin.com/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Hunting Bugs in Linux Kernel With KASAN: How to Use it &amp; What&#39;s the Benefit?</title>
+      <link>https://slavamoskvin.com/hunting-bugs-in-linux-kernel-with-kasan-how-to-use-it-whats-the-benefit/</link>
+      <pubDate>Tue, 10 Sep 2024 00:00:00 +0000</pubDate>
+      <guid>https://slavamoskvin.com/hunting-bugs-in-linux-kernel-with-kasan-how-to-use-it-whats-the-benefit/</guid>
+      <description>It all started when I had brain surgery. After several days in the hospital, I got home. But I guess the surgeon hit something in my brain after all because, at home, I started to feel a strong desire to read Linux kernel module code. I decided to start with a 3rd party module that I use, but its usage is not widespread, making it an easier target.&#xA;After just a couple of hours, I found something that looked like a vulnerability.</description>
+    </item>
+    <item>
+      <title>File Fuzzing: Easy and Really Fast with new AFL&#43;&#43; Features</title>
+      <link>https://slavamoskvin.com/file-fuzzing-easy-and-really-fast-with-new-afl-features/</link>
+      <pubDate>Tue, 09 Jan 2024 00:00:00 +0000</pubDate>
+      <guid>https://slavamoskvin.com/file-fuzzing-easy-and-really-fast-with-new-afl-features/</guid>
+      <description>One day, I saw that srelay exists. It’s a pretty old SOCKS4 and SOCKS5 proxy server with the latest update from 2018. Hand on heart, it&amp;rsquo;s hard to call it popular, but it’s far from being dead either. I also wasn’t able to find any information about the history of srelay vulnerabilities. To top it all off, the code base is really compact, so it sounded like a good opportunity to try out some of AFL++&amp;rsquo;s new features.</description>
+    </item>
+    <item>
+      <title>Bare Metal Reversing: Physical Memory</title>
+      <link>https://slavamoskvin.com/bare-metal-reversing-physical-memory/</link>
+      <pubDate>Mon, 18 Dec 2023 00:00:00 +0000</pubDate>
+      <guid>https://slavamoskvin.com/bare-metal-reversing-physical-memory/</guid>
+      <description>When you&amp;rsquo;re dealing with bare metal firmware, you have access to every bit of code: from the very start of the execution to the very end. Among other things, this means that nothing here comes for granted: all of the CPU subsystems are uninitialized, including the Memory Management Unit (MMU). Even more than that - the MMU may never be initialized over the whole time of execution, depending on your target.</description>
+    </item>
     <item>
       <title>Extracting Firmware: All Methods</title>
       <link>https://slavamoskvin.com/extracting-firmware-all-methods/</link>
       <pubDate>Sat, 18 Nov 2023 00:00:00 +0000</pubDate>
       <guid>https://slavamoskvin.com/extracting-firmware-all-methods/</guid>
-      <description>The first step in finding vulnerabilities in some kind of IoT device is getting its firmware. 5-10 years ago, it was extremely easy: firmware of every device was available on the manufacturer’s website. And while it’s still true in some cases, now there’s no more a one-size-fits-all solution. Now we have several ways of getting firmware, ranging from very easy to very hard.
-Download: Very Easy Maybe the manufacturer still offers firmware for download to everyone in need.</description>
+      <description>The first step in finding vulnerabilities in some kind of IoT device is getting its firmware. 5-10 years ago, it was extremely easy: firmware of every device was available on the manufacturer’s website. And while it’s still true in some cases, now there’s no more a one-size-fits-all solution. Now we have several ways of getting firmware, ranging from very easy to very hard.&#xA;Download: Very Easy Maybe the manufacturer still offers firmware for download to everyone in need.</description>
     </item>
     <item>
       <title>Reverse Engineering Training</title>
       <link>https://slavamoskvin.com/reverse-engineering-training/</link>
       <pubDate>Tue, 31 Oct 2023 00:00:00 +0000</pubDate>
       <guid>https://slavamoskvin.com/reverse-engineering-training/</guid>
-      <description>Last week marked a very important milestone for me: I conducted my first offline reverse engineering workshop. It took a lot of effort and energy, but it finally happened! I want to express special thanks to my colleagues without whom this couldn&amp;rsquo;t have happened for the idea, support in organizing and developing the idea further!
-My first attempt at this was 4 years and 3 jobs ago and I’m really proud that after all this years, I managed to implement it exactly how I wanted.</description>
+      <description>Last week marked a very important milestone for me: I conducted my first offline reverse engineering workshop. It took a lot of effort and energy, but it finally happened! I want to express special thanks to my colleagues without whom this couldn&amp;rsquo;t have happened for the idea, support in organizing and developing the idea further!&#xA;My first attempt at this was 4 years and 3 jobs ago and I’m really proud that after all this years, I managed to implement it exactly how I wanted.</description>
     </item>
     <item>
       <title>ARM TrustZone: A Crash Course for Reversers</title>
       <link>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</link>
       <pubDate>Sat, 23 Sep 2023 00:00:00 +0000</pubDate>
       <guid>https://slavamoskvin.com/arm-trustzone-a-crash-course-for-reversers/</guid>
-      <description>1. The Role of NS (Non-Secure) Memory Bits Each memory page in a system comes with a Non-Secure (NS) bit. The &amp;ldquo;Normal World&amp;rdquo; can only access memory with the NS bit set, while the &amp;ldquo;Secure World&amp;rdquo; has unrestricted access to both NS and Secure memory. The NS bit is crucial for compartmentalizing secure and non-secure operations. Learn more about NS memory.
-2. Exception Levels (ELs) ARM CPUs utilize four levels of privileges, known as Exception Levels (ELs).</description>
+      <description>1. The Role of NS (Non-Secure) Memory Bits Each memory page in a system comes with a Non-Secure (NS) bit. The &amp;ldquo;Normal World&amp;rdquo; can only access memory with the NS bit set, while the &amp;ldquo;Secure World&amp;rdquo; has unrestricted access to both NS and Secure memory. The NS bit is crucial for compartmentalizing secure and non-secure operations. Learn more about NS memory.&#xA;2. Exception Levels (ELs) ARM CPUs utilize four levels of privileges, known as Exception Levels (ELs).</description>
     </item>
   </channel>
 </rss>

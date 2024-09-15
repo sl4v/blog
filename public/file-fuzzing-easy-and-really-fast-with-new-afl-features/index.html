@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="https://gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.122.0">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>File Fuzzing: Easy and Really Fast with new AFL&#43;&#43; Features &middot; Slava Moskvin</title>
+  <meta name="description" content="" />
+
+  
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+
+  <script data-goatcounter="https://sl4v.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      
+      <div class="author-image">
+        <img src="/IMG_2021-3-16.jpeg" alt="Author Image" class="author-image">
+      </div>
+      
+      
+      <a href="https://slavamoskvin.com"><h1>Slava Moskvin</h1></a>
+
+      <p class="lead">
+       Reverse Engineering and Offensive Security 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://slavamoskvin.com">📜 Home</a> </li>
+        <li><a href="https://www.linkedin.com/in/vyacheslav-moskvin/"> 🌐 LinkedIn </a></li><li><a href="https://twitter.com/slava_moskvin_"> 🐦 Twitter </a></li><li><a href="https://www.youtube.com/c/PathCybersecSlavaMoskvin"> 🔴 YouTube </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2024. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+  <h1>File Fuzzing: Easy and Really Fast with new AFL&#43;&#43; Features</h1>
+  <time datetime=2024-01-09T00:00:00Z class="post-date">Tue, Jan 9, 2024</time>
+  <p><img src="srelay-post-pic-2-hires.png" alt="Alt text"></p>
+<p>One day, I saw that <code>srelay</code> exists. It’s a pretty old SOCKS4 and SOCKS5 proxy server with the latest update from 2018. Hand on heart, it&rsquo;s hard to call it popular, but it’s far from being dead either. I also wasn’t able to find any information about the history of srelay vulnerabilities. To top it all off, the code base is really compact, so it sounded like a good opportunity to try out some of AFL++&rsquo;s new features.</p>
+<hr>
+<h2 id="reconnaissance">Reconnaissance</h2>
+<p>After briefly reading the source code, we can split the target’s functionality into several distinct parts that parse user data:</p>
+<ol>
+<li>Config parsing</li>
+<li>SOCKS server</li>
+<li>Proxy client:
+<ol>
+<li>SOCKS</li>
+<li>HTTP</li>
+</ol>
+</li>
+</ol>
+<p>I would argue that each of these parts needs its own fuzzing harness based on the vastly different data formats they parse:</p>
+<ul>
+<li>The text-based config looks nothing like SOCKS or HTTP requests.</li>
+<li>SOCKS and HTTP are obviously different protocols with request formats that are not alike.</li>
+<li>While the SOCKS client and server operate on a similar protocol, they still expect different types of data to parse. Mixing it would just confuse the fuzzer.</li>
+</ul>
+<p>On top of that, splitting the fuzzing campaign into several subcampaigns allows us to isolate pieces of code with different functionalities into their own harnesses, making the whole thing much more manageable.</p>
+<p>We can start with fuzzing the config parser. It’s the easiest parser to fuzz in the code: just one neat function <code>int readconf(FILE *fp)</code>. Ok, but is a config parser vulnerability cool? Well, it’s not as cool as a vulnerability exploitable over a network, so you might get fewer respect points from the cool kids on the block. But if we calculate the CVSS for a code execution vulnerability that we can trigger, let&rsquo;s say, through a world-writable config file, we’ll get a CVSS score of 6.4 in the worst-case scenario. Not too shabby.</p>
+<p><img src="1.png" alt="Alt text"></p>
+<p>Maybe we’ll cover the rest of the functionality another time, but for now, <code>readconf</code> has won a place in my heart and it looks like a good option to try out features all the cool guys are using.</p>
+<h2 id="desperate-times-call-for-desperate-measures">Desperate times call for desperate measures</h2>
+<p>Having a function like <code>int readconf(FILE *fp)</code> to fuzz is the dream of every master fuzzer. We can follow the beaten path and write a usual AFL harness around the function:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">int</span> argc, <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>argv[]) {
+</span></span><span style="display:flex;"><span>    FILE <span style="color:#f92672">*</span>fp <span style="color:#f92672">=</span> <span style="color:#a6e22e">fopen</span>(argv[<span style="color:#ae81ff">1</span>], <span style="color:#e6db74">&#34;r&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> result <span style="color:#f92672">=</span> <span style="color:#a6e22e">readconf</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">fclose</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> result;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>That’s a good approach and it will work. But what if we want to spice things up and use persistent fuzzing instead of the usual fork server? The fork server mode is self-explanatory: on each fuzzing iteration, a new fork of the target process is started. But in persistent mode, AFL++ will execute our target function in a loop: no forks — more speed, and that’s what we want.</p>
+<p>AFL++ has had persistent mode for some time, but implementing a harness for it always felt kind of clumsy, to be honest. Your code is supposed to look like this <a href="https://github.com/AFLplusplus/AFLplusplus/blob/stable/instrumentation/README.persistent_mode.md">according to the docs</a>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">__AFL_FUZZ_INIT</span>();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef __AFL_HAVE_MANUAL_CONTROL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#a6e22e">__AFL_INIT</span>();
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>buf <span style="color:#f92672">=</span> __AFL_FUZZ_TESTCASE_BUF;  <span style="color:#75715e">// must be after __AFL_INIT
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                                                 <span style="color:#75715e">// and before __AFL_LOOP!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">while</span> (<span style="color:#a6e22e">__AFL_LOOP</span>(<span style="color:#ae81ff">10000</span>)) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> len <span style="color:#f92672">=</span> __AFL_FUZZ_TESTCASE_LEN;  
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">target_function</span>(buf, len);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This works, but we can do better than that. To find out how, we will have to do the unthinkable — go dig deeper into the docs. And <a href="https://aflplus.plus/docs/fuzzing_in_depth/">there</a>, we find that:</p>
+<blockquote>
+<p>libfuzzer <code>LLVMFuzzerTestOneInput()</code> harnesses are the defacto standard for fuzzing, and they can be used with AFL++ (and honggfuzz) as well!</p>
+</blockquote>
+<p>Great news: on top of better (in my opinion) syntax, we get the ability to use our harness with not one, but three fuzzers for exactly 0 additional cost.</p>
+<p>To refresh our memory, a minimal libfuzzer harness is just 4 lines of code:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">extern</span> <span style="color:#e6db74">&#34;C&#34;</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">LLVMFuzzerTestOneInput</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span> <span style="color:#f92672">*</span>Data, <span style="color:#66d9ef">size_t</span> Size) {
+</span></span><span style="display:flex;"><span>  <span style="color:#a6e22e">DoSomethingWithData</span>(Data, Size);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Let’s rewrite it for our case:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// include or copy target function code 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// and everything it needs to work
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">LLVMFuzzerTestOneInput</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span> <span style="color:#f92672">*</span>Data, <span style="color:#66d9ef">size_t</span> Size) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> tmpfilename[] <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;readconf_fuzzXXXXXX&#34;</span>;
+</span></span><span style="display:flex;"><span>    FILE <span style="color:#f92672">*</span>fp <span style="color:#f92672">=</span> <span style="color:#a6e22e">fopen</span>(tmpfilename, <span style="color:#e6db74">&#34;wb&#34;</span>);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">fwrite</span>(Data, <span style="color:#ae81ff">1</span>, Size, fp);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">int</span> result <span style="color:#f92672">=</span> <span style="color:#a6e22e">readconf</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">fclose</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> result;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>We lose <code>extern &quot;C&quot;</code> since the code is C, not C++, then write the data buffer to a file and pass the <code>FILE</code> pointer to the target function.</p>
+<p>But it’s 2024 already and storing files in the filesystem is so out of fashion. And we already get less respect from our friends because of the function we chose to fuzz! Oh yeah, and storing something in the filesystem instead of memory will slow things down.</p>
+<p>We could save files in <code>/tmp</code>, which is memory-backed, but what if we didn’t have to involve the filesystem at all, thus totally eliminating the middle man. Fuzzing is a game of speed, and doing so will allow us to gain some by not having to wait for the system call execution.</p>
+<p>We can achieve this with <code>fmemopen</code> — a function from the C standard library that&rsquo;s been there for years, but is still not well known. It allows us to open a memory buffer as a file and returns a <code>FILE</code> pointer that&rsquo;s compatible with all file operations. With it, our fuzzing function will look like this, nothing unnecessary, everything stays in memory:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">LLVMFuzzerTestOneInput</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">uint8_t</span> <span style="color:#f92672">*</span>Data, <span style="color:#66d9ef">size_t</span> Size) {
+</span></span><span style="display:flex;"><span>    FILE <span style="color:#f92672">*</span>fp <span style="color:#f92672">=</span> <span style="color:#a6e22e">fmemopen</span>(Data, Size, <span style="color:#e6db74">&#34;r&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">readconf</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">fclose</span>(fp);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Just 6 lines of code, so concise, but so powerful! No, I’m not crying, you’re!</p>
+<h2 id="fuzzing">Fuzzing</h2>
+<p>Let’s compile our code:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>afl-clang-fast -fsanitize<span style="color:#f92672">=</span>fuzzer -o harness harness.c
+</span></span></code></pre></div><p><del>After fixing a bunch of C stuff</del> Immediately after, we can start the fuzzer:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>afl-fuzz -i inputs -o outputs ./harness
+</span></span></code></pre></div><p><img src="2.png" alt="Alt text"></p>
+<p>The execution speed is 120,000 runs per second. Really fast, probably too fast to be true. Normally I’d add some logging and investigate the situation. But we introduced a lot of optimizations and compiled the harness using <code>afl-clang-fast</code>. There are <a href="https://x9security.com/fuzzing-explained-with-afl/">reports</a> of persistence mode achieving more or less the same order of speed we have here. On top of that, I used really powerful hardware to run it. So I’d say it’s fine for our learning purposes.</p>
+<p>The next morning, we’re presented with this.</p>
+<p><img src="3.png" alt="Alt text"></p>
+<p>Unfortunately for us, no bugs were found. We can also see that <code>last new find</code> is more than 6 hours. It means that it&rsquo;s been 6 hours since AFL++ saw a new execution path. Considering that it also cycled through all possible mutations 2008 times, it’s safe to say that we can conclude our fuzzing campaign.</p>
+<p>Yes, we don’t have any findings, but maybe the real findings were the things we’ve learned along the way?</p>
+
+</div>
+
+
+    </main>
+
+    
+      
+    
+  </body>
+</html>

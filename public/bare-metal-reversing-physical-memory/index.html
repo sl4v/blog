@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="https://gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.122.0">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Bare Metal Reversing: Physical Memory &middot; Slava Moskvin</title>
+  <meta name="description" content="" />
+
+  
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+
+  <script data-goatcounter="https://sl4v.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      
+      <div class="author-image">
+        <img src="/IMG_2021-3-16.jpeg" alt="Author Image" class="author-image">
+      </div>
+      
+      
+      <a href="https://slavamoskvin.com"><h1>Slava Moskvin</h1></a>
+
+      <p class="lead">
+       Reverse Engineering and Offensive Security 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://slavamoskvin.com">📜 Home</a> </li>
+        <li><a href="https://www.linkedin.com/in/vyacheslav-moskvin/"> 🌐 LinkedIn </a></li><li><a href="https://twitter.com/slava_moskvin_"> 🐦 Twitter </a></li><li><a href="https://www.youtube.com/c/PathCybersecSlavaMoskvin"> 🔴 YouTube </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2024. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+  <h1>Bare Metal Reversing: Physical Memory</h1>
+  <time datetime=2023-12-18T00:00:00Z class="post-date">Mon, Dec 18, 2023</time>
+  <p><img src="1.png" alt="Alt text"></p>
+<p>When you&rsquo;re dealing with bare metal firmware, you have access to every bit of code: from the very start of the execution to the very end. Among other things, this means that nothing here comes for granted: all of the CPU subsystems are uninitialized, including the Memory Management Unit (MMU). Even more than that - the MMU may never be initialized over the whole time of execution, depending on your target. But what is the role of the MMU? It’s the hardware backend behind virtual memory.</p>
+<p>Virtual memory address is a concept many are already familiar with. It provides a unique virtual address space for each process, usually configured and managed by the operating system and the MMU. The MMU is responsible for translating these virtual addresses into physical addresses.</p>
+<h2 id="the-difference-between-virtual-and-physical-memory">The Difference Between Virtual and Physical Memory</h2>
+<p>Every bit of data operated on by an OS or a user-mode program is stored somewhere in physical memory (if not paged out). The OS and the MMU take care of translating virtual into physical addresses using several layers of page tables. So, knowing the virtual address and the tables&rsquo; format, it’s possible to convert it to a physical address.</p>
+<p>The same story with physical addresses: with knowledge of an address and knowing the algorithm the memory controller employs, it’s possible to locate the exact physical location of data on a DRAM chip. A DRAM chip is split into several banks, each split into rows and columns. A DIMM memory stick has two sides (ranks), each can have memory chips on it. And each memory stick belongs to a memory channel.</p>
+<p><a href="http://lackingrhoticity.blogspot.com">Mark Seaborn</a> played around with <a href="https://github.com/google/rowhammer-test/blob/master/rowhammer_test.cc">rowhammer PoC</a> to find out the <a href="http://lackingrhoticity.blogspot.com/2015/05/how-physical-addresses-map-to-rows-and-banks.html">actual algorithm</a> behind the physical address conversion:</p>
+<p><img src="1.5.png" alt="Alt text"></p>
+<p>This is an interesting piece of knowledge, but does it have any practical use for us? Well, the actual physical location of memory bytes is required to know for the above-mentioned rowhammer attack. It also might be useful for something like EMI glitching, although the good old trial and error way might be more practical here. So, in 99.9% of real-life situations, this presents just an interesting piece of background information, unlike our next topic.</p>
+<h2 id="memory-mapped-io">Memory Mapped IO</h2>
+<p>Considering that the MMU is inactive at the beginning of the execution of a baremetal firmware, you have to keep in mind that the code operates in the physical memory space. For the most part, it doesn’t mean anything special, all the operations proceed like any other memory operations. That’s until you see a weird code like this:</p>
+<p><img src="2.png" alt="Alt text"></p>
+<p>Here, a red-highlighted pointer indicates an address not present in the firmware. “What in the name of God is that?”, you may ask. Well, my God-feared friend, it’s memory-mapped input and output or MMIO, a method CPUs/SoCs/uCs use to expose peripherals to programmers. Since it uses the same instructions as normal memory access, it provides a quick and efficient way to talk with peripherals.</p>
+<p>If we’re talking about off-the-shelf chips, you can find the memory mapping in datasheets. The code in the example is for a basic STM32 microcontroller and the <a href="https://www.st.com/resource/en/datasheet/stm32f446mc.pdf">datasheet</a> can be easily found online.</p>
+<p>In the datasheet, the mysterious address is identified as belonging to USART2 (analogous to UART for our discussion). Converting the function&rsquo;s second argument, 0x1C200 from hex to decimal, gives 115200 – the popular UART baud rate. So the function is used to configure USART2&rsquo;s speed.</p>
+<p><img src="3.png" alt="Alt text"></p>
+<p>The function itself converts the baud rate into the units required by the USART controller and writes the result at an offset of 8 from the USART base address. With that, the baud rate is now configured. Other parameters, such as data bits, are configured in a similar manner. Even the actual data characters are written to a different offset from the USART base.</p>
+<p><img src="4.png" alt="Alt text"></p>
+<h2 id="further-readwatch">Further Read/Watch</h2>
+<p>Mapping of physical addresses to location in DRAM: <a href="https://depletionmode.com/ram-mapping.html">https://depletionmode.com/ram-mapping.html</a></p>
+<p>MMIO: <a href="https://www.youtube.com/watch?v=q4CxE5P6RUE">https://www.youtube.com/watch?v=q4CxE5P6RUE</a></p>
+
+</div>
+
+
+    </main>
+
+    
+      
+    
+  </body>
+</html>

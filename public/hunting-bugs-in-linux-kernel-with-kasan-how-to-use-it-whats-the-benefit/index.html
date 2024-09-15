@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="https://gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.122.0">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Hunting Bugs in Linux Kernel With KASAN: How to Use it &amp; What&#39;s the Benefit? &middot; Slava Moskvin</title>
+  <meta name="description" content="" />
+
+  
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+
+  <script data-goatcounter="https://sl4v.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      
+      <div class="author-image">
+        <img src="/IMG_2021-3-16.jpeg" alt="Author Image" class="author-image">
+      </div>
+      
+      
+      <a href="https://slavamoskvin.com"><h1>Slava Moskvin</h1></a>
+
+      <p class="lead">
+       Reverse Engineering and Offensive Security 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://slavamoskvin.com">📜 Home</a> </li>
+        <li><a href="https://www.linkedin.com/in/vyacheslav-moskvin/"> 🌐 LinkedIn </a></li><li><a href="https://twitter.com/slava_moskvin_"> 🐦 Twitter </a></li><li><a href="https://www.youtube.com/c/PathCybersecSlavaMoskvin"> 🔴 YouTube </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2024. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+  <h1>Hunting Bugs in Linux Kernel With KASAN: How to Use it &amp; What&#39;s the Benefit?</h1>
+  <time datetime=2024-09-10T00:00:00Z class="post-date">Tue, Sep 10, 2024</time>
+  <p><img src="./index.assets/Untitled-32.png" alt="Untitled-32"></p>
+<p>It all started when I had brain surgery. After several days in the hospital, I got home. But I guess the surgeon hit something in my brain after all because, at home, I started to feel a strong desire to read Linux kernel module code. I decided to start with a 3rd party module that I use, but its usage is not widespread, making it an easier target.</p>
+<p>After just a couple of hours, I found something that looked like a vulnerability. Digging deeper confirmed it—judging by the code, it was possible to trigger kernel memory overread. But that was just a theory. To prove it in practice, I needed to create a PoC.</p>
+<p>The vulnerability was nothing crazy, just a double fetch, but the thing is that I had no idea if it was enough to just create two threads to win the race condition or if I should employ some nasty tricks. Well, there was only one way to find out.</p>
+<p><img src="./index.assets/Untitled-33.png" alt="Untitled-33"></p>
+<p>I started with a simple PoC that could communicate with the kernel module using the simplest commands. When I successfully got a response, I moved on to creating a PoC for the vulnerability. My expectation was that triggering the bug would crash the system. But when I launched the PoC, nothing happened. I double-checked that the communication with the module was good and the proper branch in the IOCTL handler was triggered. Still, no crash.</p>
+<p>Well, it must be that the double fetch happens so quickly that the bug is impossible to trigger without additional tricks. I spent several days looking for those, and let me tell you: people have come up with crazier stuff than I could have possibly imagined. But most of those were already patched, and the rest either didn’t work or my IQ level was too low for them. In the end, I just put it aside, deciding that it was too hard to trigger.</p>
+<p><img src="./index.assets/Untitled-34.png" alt="Untitled-34"></p>
+<p>Until a few months later, when I decided to come back with fresh energy and fresh ideas:</p>
+<ol>
+<li>I could create my own kernel module that resembles my target, add a lot of debug prints, and try to trigger the double fetch.</li>
+<li>If that works, since the target is open source, I can pull the same trick and add a bunch of debug prints there.</li>
+<li>Alternatively, I could use Kernel Address Sanitizer (KASAN), a tool built into the kernel designed to catch various memory-related bugs, including those that are harder to catch, like my memory overread.</li>
+</ol>
+<p>To be honest, I’d managed to reach my age without ever trying KASAN, so I wasn’t sure how easy it is to use and if it works somewhere other than the developer machine. So I opted for options 1 → 2.</p>
+<p>Code-code-code and the training kernel module was ready. Code-code-code and a simple two-threaded PoC was ready too. <code>./poc &amp;&amp; dmesg</code> showed that it’s all real: debug prints reported that you can trigger the bug after not-so-many tries.</p>
+<p>The third code session to add as many debug prints as humanly possible to the target, adapt the PoC, and voila: I could see how <code>printk()</code> prints kernel heap metadata. So what was the problem the first time?</p>
+<p>It was just a simple mistake: I overlooked a crucial piece of code that essentially placed a limit on how much memory you can read—still enough to read past the buffer boundary, but not enough for the read to crash the kernel.</p>
+<p>So why KASAN in the title? It’s simple: after all that nonsense, I decided to try KASAN and it turned out it could save me A LOT of time—days shaved to an hour or two to compile the kernel with KASAN enabled. Also, with KASAN, you get a simple binary answer to whether the behavior you trigger is a vulnerability: yes or no. It’s easy to mess up debug prints or overlook something, but with KASAN the answer is definitive. Let’s dive deeper into that.</p>
+<p>KASAN creates so-called shadow memory to keep track of memory reads and writes. Each byte of shadow memory represents 8 bytes of real memory. Byte values 0x00 to 0x07 indicate normal memory that’s legal to access, while negative numbers correspond to special cases, e.g., 0xff - memory that was freed, 0xfc - red zone between allocated buffers, etc.</p>
+<p>Then each memory access is instrumented to check if each read or write attempt operates on “legal” memory or is trying to do something nasty.</p>
+<p>For more information about KASAN inner workings, feel free to check out these articles:</p>
+<p><a href="https://www.starlab.io/blog/kasan-what-is-it-how-does-it-work-and-what-are-the-strange-numbers-at-the-end">KASAN: What is it? How does it work? And what are the strange numbers at the end? — Star Lab Software</a></p>
+<p><a href="https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-3#:~:text=KASan">https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-3#:~:text=KASan</a> uses shadow memory to,bytes of kernel address space.</p>
+<p>To make use of KASAN, we have to recompile the kernel. So make sure that you have about 40 GB of free space to store the sources and build artifacts and let’s go.</p>
+<p>First, let’s install everything we need for compilation:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>bashCopy code
+</span></span><span style="display:flex;"><span>$ sudo apt update
+</span></span><span style="display:flex;"><span>$ sudo apt install build-essential libncurses-dev bison flex libssl
+</span></span></code></pre></div><p>Then let’s download the kernel source code:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>bashCopy code
+</span></span><span style="display:flex;"><span>$ apt source linux-image-<span style="color:#66d9ef">$(</span>uname -r<span style="color:#66d9ef">)</span>
+</span></span><span style="display:flex;"><span>$ cd linux-*
+</span></span></code></pre></div><p>Now we have to edit the kernel configuration to turn on KASAN:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ make ARCH<span style="color:#f92672">=</span>arm64 menuconfig
+</span></span></code></pre></div><p>Navigate to <strong><code>Kernel hacking -&gt; Memory Debugging</code></strong> and enable <strong><code>KASAN: runtime memory debugger</code></strong>. Choose the type of KASAN that best fits your needs (e.g., generic KASAN).</p>
+<p>You can examine your .config to check if KASAN was enabled. This one option was enough for me, but feel free to get crazy and enable more.</p>
+<p>That’s it, start the build and go get a cup of tea or two:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ make ARCH<span style="color:#f92672">=</span>arm64 -j <span style="color:#66d9ef">$(</span>nproc<span style="color:#66d9ef">)</span>
+</span></span><span style="display:flex;"><span>$ make ARCH<span style="color:#f92672">=</span>arm64 modules
+</span></span><span style="display:flex;"><span>$ make ARCH<span style="color:#f92672">=</span>arm64 dtbs
+</span></span></code></pre></div><p>The Linux kernel compiles quite nicely for such a huge project, but in my particular case, I encountered this cryptic error:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>  LD <span style="color:#f92672">[</span>M<span style="color:#f92672">]</span>  net/hsr/hsr.ko
+</span></span><span style="display:flex;"><span>  LD <span style="color:#f92672">[</span>M<span style="color:#f92672">]</span>  net/qrtr/qrtr.ko
+</span></span><span style="display:flex;"><span>  LD <span style="color:#f92672">[</span>M<span style="color:#f92672">]</span>  net/qrtr/qrtr-smd.ko
+</span></span><span style="display:flex;"><span>  LD <span style="color:#f92672">[</span>M<span style="color:#f92672">]</span>  net/qrtr/qrtr-mhi.ko
+</span></span><span style="display:flex;"><span>make: *** <span style="color:#f92672">[</span>Makefile:246: __sub-make<span style="color:#f92672">]</span> Error <span style="color:#ae81ff">2</span>
+</span></span></code></pre></div><p>So I resumed the build with just one job to get better error output:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ make ARCH<span style="color:#f92672">=</span>arm64 -j <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>  SYNC    include/generated/autoconf.h
+</span></span><span style="display:flex;"><span>  CALL    scripts/checksyscalls.sh
+</span></span><span style="display:flex;"><span>  DESCEND bpf/resolve_btfids
+</span></span><span style="display:flex;"><span>  INSTALL libsubcmd_headers
+</span></span><span style="display:flex;"><span>  UPD     include/generated/utsversion.h
+</span></span><span style="display:flex;"><span>  CC      init/version-timestamp.o
+</span></span><span style="display:flex;"><span>BTF: .tmp_vmlinux.btf: pahole <span style="color:#f92672">(</span>pahole<span style="color:#f92672">)</span> is not available
+</span></span><span style="display:flex;"><span>Failed to generate BTF <span style="color:#66d9ef">for</span> vmlinux
+</span></span><span style="display:flex;"><span>Try to disable CONFIG_DEBUG_INFO_BTF
+</span></span><span style="display:flex;"><span>make<span style="color:#f92672">[</span>2<span style="color:#f92672">]</span>: *** <span style="color:#f92672">[</span>scripts/Makefile.vmlinux:37: vmlinux<span style="color:#f92672">]</span> Error <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>make<span style="color:#f92672">[</span>1<span style="color:#f92672">]</span>: *** <span style="color:#f92672">[</span>/media/sl4v/a6417fe8-1e5e-4957-86d7-0413e50d4dc6/kasan/linux-6.6.15/Makefile:1176: vmlinux<span style="color:#f92672">]</span> Error <span style="color:#ae81ff">2</span>
+</span></span><span style="display:flex;"><span>make: *** <span style="color:#f92672">[</span>Makefile:246: __sub-make<span style="color:#f92672">]</span> Error <span style="color:#ae81ff">2</span>
+</span></span></code></pre></div><p>Thankfully, the error message plainly told me what to do, and it worked. I resumed the compilation process, and the rest of the way was smooth:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ nano .config
+</span></span></code></pre></div><p>After the tea ceremony you had, proceed by installing modules and the kernel itself:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ sudo make ARCH<span style="color:#f92672">=</span>arm64 modules_install
+</span></span><span style="display:flex;"><span>$ sudo make ARCH<span style="color:#f92672">=</span>arm64 install
+</span></span></code></pre></div><p>And finish by updating the bootloader configuration and rebooting:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ sudo update-grub
+</span></span><span style="display:flex;"><span>$ sudo reboot
+</span></span></code></pre></div><p>Now you should take a careful look at the options you’re offered by the bootloader during boot: you should have one new option—that’s your kernel with KASAN—select it.</p>
+<p>The boot should take much more time and memory—that’s the price we have to pay for all the instrumentation and memory tracking KASAN is doing for us. After the boot is finished, verify that you have KASAN enabled:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>$ sudo dmesg | grep -i kasan
+</span></span></code></pre></div><p>Phew, I hope you didn’t forget why we came here. Once we have a kernel with KASAN up and running, we can load the target module in question and execute our PoC to get the following output:</p>
+<p><img src="./index.assets/Untitled-32-6427388.png" alt="Untitled-32"></p>
+<p>KASAN was kind enough to include a shadow memory dump, and we can see that the buggy read was at the address, and the corresponding shadow memory byte is 0xfc—the red zone between kernel buffers. This already tells us what happened: the kernel module tried to read data past the allocated buffer.</p>
+<p>So, KASAN is not only very helpful for getting a binary answer on whether a bug is triggered or not, but it also provides an opportunity to debug and find the root cause if the bug was found during fuzzing or similar processes.</p>
+<h3 id="further-reading">Further reading</h3>
+<p><a href="https://www.starlab.io/blog/kasan-what-is-it-how-does-it-work-and-what-are-the-strange-numbers-at-the-end">KASAN: What is it? How does it work? And what are the strange numbers at the end? — Star Lab Software</a></p>
+<p><a href="https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-3">https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-3</a></p>
+<p><a href="https://www.infradead.org/~mchehab/kernel_docs/dev-tools/kasan.html">The Kernel Address Sanitizer (KASAN) — The Linux Kernel 5.10.0-rc1+ documentation</a></p>
+<p><a href="https://static.lwn.net/kerneldoc/dev-tools/kasan.html">Kernel Address Sanitizer (KASAN) — The Linux Kernel documentation</a></p>
+<p><a href="https://blog.fuzzing-project.org/23-Kernel-Address-Sanitizer-KASAN.html">Kernel Address Sanitizer (KASAN) | The Fuzzing Project</a></p>
+
+</div>
+
+
+    </main>
+
+    
+      
+    
+  </body>
+</html>
