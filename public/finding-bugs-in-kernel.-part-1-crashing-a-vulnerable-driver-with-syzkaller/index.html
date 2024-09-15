@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-us" lang="en-us">
+<head>
+  <link href="https://gmpg.org/xfn/11" rel="profile">
+  <meta http-equiv="content-type" content="text/html; charset=utf-8">
+  <meta name="generator" content="Hugo 0.122.0">
+
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Finding Bugs in Kernel. Part 1: Crashing a Vulnerable Driver with Syzkaller &middot; Slava Moskvin</title>
+  <meta name="description" content="" />
+
+  
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/print.css" media="print">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/poole.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/syntax.css">
+  <link type="text/css" rel="stylesheet" href="https://slavamoskvin.comcss/hyde.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Abril+Fatface|PT+Sans:400,400i,700">
+
+
+  
+  <link rel="apple-touch-icon-precomposed" sizes="144x144" href="/apple-touch-icon-144-precomposed.png">
+  <link rel="shortcut icon" href="/favicon.png">
+
+  
+  
+
+  <script data-goatcounter="https://sl4v.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</head>
+
+  <body class=" ">
+  <aside class="sidebar">
+  <div class="container sidebar-sticky">
+    <div class="sidebar-about">
+      
+      <div class="author-image">
+        <img src="/IMG_2021-3-16.jpeg" alt="Author Image" class="author-image">
+      </div>
+      
+      
+      <a href="https://slavamoskvin.com"><h1>Slava Moskvin</h1></a>
+
+      <p class="lead">
+       Reverse Engineering and Offensive Security 
+      </p>
+    </div>
+
+    <nav>
+      <ul class="sidebar-nav">
+        <li><a href="https://slavamoskvin.com">📜 Home</a> </li>
+        <li><a href="https://www.linkedin.com/in/vyacheslav-moskvin/"> 🌐 LinkedIn </a></li><li><a href="https://twitter.com/slava_moskvin_"> 🐦 Twitter </a></li><li><a href="https://www.youtube.com/c/PathCybersecSlavaMoskvin"> 🔴 YouTube </a></li>
+      </ul>
+    </nav>
+
+    <p>&copy; 2024. All rights reserved. </p>
+  </div>
+</aside>
+
+    <main class="content container">
+    <div class="post">
+  <h1>Finding Bugs in Kernel. Part 1: Crashing a Vulnerable Driver with Syzkaller</h1>
+  <time datetime=2024-09-15T00:00:00Z class="post-date">Sun, Sep 15, 2024</time>
+  <p><img src="./index.assets/image.png" alt="image.png"></p>
+<p><code>syzkaller</code> is one of the best fuzzers for the Linux kernel. It supports coverage (through KCOV) and provides a way to declaratively describe syscalls you want to fuzz. It also highly encourages you to use KASAN (and you can even use more sanitizers supported by the kernel). We got to know KASAN in the <a href="https://slavamoskvin.com/hunting-bugs-in-linux-kernel-with-kasan-how-to-use-it-whats-the-benefit/">previous post</a> and it&rsquo;s a really good thing that allows you to catch more bugs during fuzzing.</p>
+<p>Linux has around <a href="https://github.com/torvalds/linux/blob/v6.11-rc6/arch/x86/entry/syscalls/syscall_64.tbl">450 syscalls</a>, which at first glance might not seem like a lot of attack surface to fuzz. But actually, the attack surface is huge because those syscalls provide you with communication channels to numerous kernel subsystems. Even the simplest syscall <code>open</code> has a different implementation for every filesystem driver, every node under <code>/dev</code>, and so on. That&rsquo;s why <code>syzkaller</code>&rsquo;s <a href="https://github.com/google/syzkaller/tree/master/sys/linux">system call descriptions</a>, although vast, still don&rsquo;t cover every last bit of the attack surface.</p>
+<p>Another good thing about <code>syzkaller</code> is that, unlike a lot of tools out there, it runs not just on the author&rsquo;s machine, but actually, while the setup is not the simplest, it works perfectly out of the box. The docs even tell you how to set up fuzzing not only for x86_64, but also for arm/arm64, riscv64, and s390x.</p>
+<p><a href="https://github.com/google/syzkaller/blob/master/docs/process_structure.png?raw=true"><img src="./index.assets/process_structure.png" alt="Process structure for syzkaller"></a></p>
+<p>That is, if you&rsquo;re using Linux to host fuzzing virtual machines. I, in my typical manner, didn&rsquo;t strive for an easy way out; I wanted to my use macbook to fuzz as it was the most powerful machine in my house and because I simply liked working on it. That was a part of the problem. Another issue was that while <code>syzkaller</code> <em>supports</em> fuzzing kernel modules, my impression is that it&rsquo;s definetely not the first class citizen and the tool focuses on fuzzing the mainline kernel (at understandably so). In my opinion, third-party kernel modules can present a good target for security research because many of them are not widely adopted and present less incentive for security researchers out there. So, it looked to me like a perfect start for getting into kernel fuzzing.</p>
+<h1 id="setting-up-vanila-syzkaller">Setting up vanila syzkaller</h1>
+<p>The first step is to set up syzkaller with default syscall descriptions, just to make sure everything works. My Mac has an arm64 CPU, so I&rsquo;m going to need to compile everything for this architecture, and I also need a Linux VM to compile the kernel and build a root filesystem.</p>
+<p>Thankfully, I could just follow this <a href="https://github.com/google/syzkaller/blob/master/docs/linux/setup_linux-host_qemu-vm_arm64-kernel.md">guide from the docs</a> to build a rootfs with <code>buildroot</code> and compile the kernel. The only small change is that we don&rsquo;t need to use cross-compilation and can just compile natively. So, during buildroot configuration, instead of</p>
+<pre tabindex="0"><code>Toolchain type
+    External toolchain - Linaro AArch64
+</code></pre><p>select <code>buildroot toolchain</code>. Here, during compilation, I had this weird error: <code>ld: cannot find crti.o: No such file or directory</code>. But the solution was pretty simple—I just used the latest release candidate version instead of LTS/stable and it just worked.</p>
+<p>Same for the kernel: omit the <code>CROSS_COMPILE</code> environment variable and don&rsquo;t change the <code>CONFIG_CROSS_COMPILE</code> option in the kernel <code>.config</code> file. I also needed to install qemu-system. The docs suggest installing from source, but really, QEMU is available in any package manager at this point, so <code>brew install qemu</code> worked just fine.</p>
+<p>Then to the compilation of <code>syzkaller</code> ifself. I needed to compile it on my host, macos — or so I thought at the time. <code>syzkaller</code> can be compiled in just 3 simple commands, um&hellip;, what?</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>git clone https://github.com/google/syzkaller
+</span></span><span style="display:flex;"><span>cd syzkaller
+</span></span><span style="display:flex;"><span>make
+</span></span><span style="display:flex;"><span>Makefile:31: run command via tools/syz-env <span style="color:#66d9ef">for</span> best compatibility, see:
+</span></span><span style="display:flex;"><span>Makefile:32: https://github.com/google/syzkaller/blob/master/docs/contributing.md#using-syz-env
+</span></span><span style="display:flex;"><span>exit status <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>Makefile:44: *** unknown target darwin/arm64.  Stop.
+</span></span></code></pre></div><p>After digging through the docs and Makefiles, I found that when compiling <code>syzkaller</code>, you can specify the OS and architecture for both host and target:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># There are 3 OS/arch pairs:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#  - HOSTOS/HOSTARCH: pair where syz-manager will run.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#  - TARGETOS/TARGETVMARCH: pair of the target OS under test.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#  - TARGETOS/TARGETARCH: pair of the target test process.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># The last 2 differ for e.g. amd64 OS and 386 test processes (compat syscall testing).</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># All pairs default to the current machine. All but BUILD can be overriden.</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># For example, to test linux/amd64 on linux/amd64, you just run:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    make</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># To test linux/arm64 from darwin/amd64 host, run:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    make HOSTOS=darwin HOSTARCH=amd64 TARGETOS=linux TARGETARCH=arm64</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># To test x86 compat syscalls, run:</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#    make TARGETVMARCH=amd64 TARGETARCH=386</span>
+</span></span></code></pre></div><p>So, I compiled <code>syzkaller</code> with the newly obtained knowledge.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>make HOSTOS<span style="color:#f92672">=</span>darwin HOSTARCH<span style="color:#f92672">=</span>arm64 TARGETOS<span style="color:#f92672">=</span>linux TARGETARCH<span style="color:#f92672">=</span>arm64
+</span></span><span style="display:flex;"><span>************************************************************************************
+</span></span><span style="display:flex;"><span>Executor will not be built
+</span></span><span style="display:flex;"><span>Building executor <span style="color:#66d9ef">for</span> linux is not supported on darwin
+</span></span><span style="display:flex;"><span>************************************************************************************
+</span></span></code></pre></div><p>And managed to build all important stuff, but not the <code>executor</code>—this one gets uploaded to the fuzzing VM and executes fuzzing programs, so you know, kind of important. So I fired up my Linux VM once more:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>  git clone https://github.com/google/syzkaller
+</span></span><span style="display:flex;"><span>  cd syzkaller
+</span></span><span style="display:flex;"><span>  make
+</span></span></code></pre></div><p>And then I just copied it to the host.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>scp sl4v@192.168.65.7:/home/sl4v/linux_kernel/syzkaller/bin/linux_arm64/syz-executor bin/linux_arm64
+</span></span></code></pre></div><p>With everything set up, I wrote this simple config:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;name&#34;</span>: <span style="color:#e6db74">&#34;QEMU-aarch64&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;target&#34;</span>: <span style="color:#e6db74">&#34;linux/arm64&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;http&#34;</span>: <span style="color:#e6db74">&#34;:56700&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;workdir&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/proj/linux_kernel/syzkaller_workdir&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;kernel_obj&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/proj/linux_kernel/linux-6.8.12-builddir/media/sl4v/linux_disk/syzkaller/linux-6.8.12&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;syzkaller&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/proj/linux_kernel/syzkaller&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;image&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/proj/linux_kernel/rootfs.ext3&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;sshkey&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/.ssh/id_rsa&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;procs&#34;</span>: <span style="color:#ae81ff">8</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;type&#34;</span>: <span style="color:#e6db74">&#34;qemu&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">&#34;vm&#34;</span>: {
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;count&#34;</span>: <span style="color:#ae81ff">4</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;qemu&#34;</span>: <span style="color:#e6db74">&#34;/opt/homebrew/bin/qemu-system-aarch64&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;cmdline&#34;</span>: <span style="color:#e6db74">&#34;console=ttyAMA0 root=/dev/vda&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;kernel&#34;</span>: <span style="color:#e6db74">&#34;/Users/sl4v/proj/linux_kernel/Image&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;cpu&#34;</span>: <span style="color:#ae81ff">2</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">&#34;mem&#34;</span>: <span style="color:#ae81ff">2048</span>
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Then I fired it up with <code>syzkaller/bin/syz-manager -config=syzkaller.conf</code> at saw this sweet, sweet</p>
+<p><img src="./index.assets/Screenshot%202024-09-15%20at%2013.47.03.png" alt="Screenshot 2024-09-15 at 13.47.03"></p>
+<h1 id="testing-with-vulnerable-driver">Testing with vulnerable driver</h1>
+<p>Then it was just a small matter of testing how <code>syzkaller</code> handles out-of-tree kernel modules. Instead of immediately starting with something from real life, I wrote a tiny vulnerable kernel module to test this out in a controlled environment. It has just one communication interface which boils down to:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define IOCTL_CMD _IOR(&#39;v&#39;, &#39;1&#39;, int32_t*)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> ioctl_arg{
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">size_t</span> size;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> data[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>};
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">long</span> <span style="color:#a6e22e">vuln_ioctl</span>(<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>file, <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> cmd, <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> arg) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">256</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> ioctl_arg to;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> res;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">switch</span> (cmd) {
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">case</span> IOCTL_CMD:
+</span></span><span style="display:flex;"><span>            res <span style="color:#f92672">=</span> <span style="color:#a6e22e">copy_from_user</span>(<span style="color:#f92672">&amp;</span>to, (<span style="color:#66d9ef">int32_t</span><span style="color:#f92672">*</span>) arg, <span style="color:#66d9ef">sizeof</span>(to));
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (res <span style="color:#f92672">!=</span><span style="color:#ae81ff">0</span> ) {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1337</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            res <span style="color:#f92672">=</span> <span style="color:#a6e22e">copy_from_user</span>(buf, (<span style="color:#66d9ef">int32_t</span><span style="color:#f92672">*</span>) arg, to.size);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (res <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1338</span>;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">copy_to_user</span>((<span style="color:#66d9ef">int32_t</span><span style="color:#f92672">*</span>) arg, <span style="color:#f92672">&amp;</span>value, <span style="color:#66d9ef">sizeof</span>(value))) {
+</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EFAULT;
+</span></span><span style="display:flex;"><span>            }
+</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">pr_info</span>(<span style="color:#e6db74">&#34;vuln_ioctl: IOCTL_CMD called, value = %d</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, value);
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">default</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span></code></pre></div><p>The vulnerability here is pretty simple: the code copies the first part of user data. Then it uses size it got from the user (<code>to.size</code>) to as the size of the data to copy. Of course, the copy operation is to the fixed sized buffer. Good enough to bypass compiler checks and it was already on my mind since the <a href="https://slavamoskvin.com/hunting-bugs-in-linux-kernel-with-kasan-how-to-use-it-whats-the-benefit/">last article</a>.</p>
+<p>The client was even shorter and looked like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> <span style="color:#a6e22e">open</span>(<span style="color:#e6db74">&#34;/dev/vuln_ioctl&#34;</span>, O_RDWR);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> ioctl_arg<span style="color:#f92672">*</span> arg;
+</span></span><span style="display:flex;"><span>    arg <span style="color:#f92672">=</span> (<span style="color:#66d9ef">struct</span> ioctl_arg<span style="color:#f92672">*</span>)<span style="color:#a6e22e">malloc</span>(<span style="color:#ae81ff">1024</span>);
+</span></span><span style="display:flex;"><span>    arg<span style="color:#f92672">-&gt;</span>size<span style="color:#f92672">=</span><span style="color:#ae81ff">1024</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">ioctl</span>(fd, IOCTL_CMD, arg);
+</span></span></code></pre></div><p>I compiled the module with KASAN and uploaded it and the client to the QEMU VM. And lo and behold, after <code>./vuln_ioctl_client</code> we have a nice stack trace followed by a kernel panic. Cool, now the only step left is to repeat it, but with <code>syzkaller</code>.</p>
+<p><img src="index.assets/image.png" alt="image.png"></p>
+<p>First, I made it so <code>vuln_ioctl</code> is loaded on every reboot automatically by adding this line to /etc/init.d/S50sshd:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>insmod /vuln_ioctl.ko
+</span></span></code></pre></div><p>Reboot, and indeed it worked, perfect.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># lsmod</span>
+</span></span><span style="display:flex;"><span>Module                  Size  Used by    Tainted: G
+</span></span><span style="display:flex;"><span>vuln_ioctl             <span style="color:#ae81ff">12288</span>  <span style="color:#ae81ff">0</span>
+</span></span></code></pre></div><p>Then I had to write a description of the communication interface. It sounds intimidating, but once you find the right doc and start taking inspiration from descriptions that are already there, it&rsquo;s super simple—at least for this case.</p>
+<p>To add a new syscall description, you have to create a file <code>syzkaller/sys/&lt;OS&gt;/your_name.txt</code>. My description was pretty simple and straightforward.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-C" data-lang="C"><span style="display:flex;"><span><span style="color:#75715e">// include files to get constants
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>include <span style="color:#f92672">&lt;</span>uapi<span style="color:#f92672">/</span>linux<span style="color:#f92672">/</span>fcntl.h<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>include <span style="color:#f92672">&lt;</span>vuln_ioctl.h<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// resource is value that need to be passed from output of one syscall to input of another syscall
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>resource fd_vuln_ioctl[fd]
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// custom version of openat (basically) open syscall for constants necessary for the kernel module 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>openat<span style="color:#960050;background-color:#1e0010">$</span><span style="color:#a6e22e">vuln_ioctl</span>(fd <span style="color:#66d9ef">const</span>[AT_FDCWD], file ptr[in, string[<span style="color:#e6db74">&#34;/dev/vuln_ioctl&#34;</span>]], flags flags[open_flags], mode <span style="color:#66d9ef">const</span>[<span style="color:#ae81ff">0</span>]) fd_vuln_ioctl
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// ioctl desciption for the kernel module
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>ioctl<span style="color:#960050;background-color:#1e0010">$</span><span style="color:#a6e22e">IOCTL_CMD</span>(fd fd_vuln_ioctl, cmd <span style="color:#66d9ef">const</span>[IOCTL_CMD], arg ptr[in, ioctl_arg])
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>ioctl_arg {
+</span></span><span style="display:flex;"><span>	size	len[data, int64]
+</span></span><span style="display:flex;"><span>	data	array[int8]
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Notice that the description uses constants <code>AT_FDCWD</code> and <code>IOCTL_CMD</code>, so I needed to add my header file <code>vuln_ioctl.h</code>somewhere <code>syzkaller</code> is aware of.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># in /media/sl4v/linux_disk/syzkaller/linux-6.8.12</span>
+</span></span><span style="display:flex;"><span>$ cp vuln_ioctl/vuln_ioctl.h ./include/
+</span></span></code></pre></div><p>The next step was to execute <code>make extract</code> so that <code>syzkaller</code> can extract all necessary constants for every relevant architecture and put it into <code>syzkaller/sys/&lt;OS&gt;/your_name.txt.const</code>. Simple enough, but this proved to be the hardest step in the whole endeavour. Everything was done in a Linux VM, so the blame is not on the lack of support for macos.</p>
+<p>Here&rsquo;s a list of what I&rsquo;ve tried:</p>
+<ol>
+<li><code>make extract TARGETOS=linux SOURCEDIR=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64</code> - just a bunch of errors in return.</li>
+<li>Recompiling the kernel after each failed <code>make extract</code> attempt (it turned out that <code>make extract</code> deletes build artifacts). Totally useless as <code>make extract</code> doesn&rsquo;t rely on built files.</li>
+<li><code>bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10</code> - to extract constants only for arm64. Got <code>error: ‘KASAN_SHADOW_SCALE_SHIFT’ undeclared</code>. Solved it with <code>make ARCH=arm64 defconfig</code> in the kernel directory. Also, it turned out that <code>defconfig</code> is also necessary after each <code>make extract</code> attempt.</li>
+<li>Once again <code>bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10</code> only to get <code>‘struct common_audit_data’ has no member named ‘smack_audit_data’</code>. This one is super easy—just add <code>CONFIG_SECURITY_SMACK=y</code> to <code>.config</code>.</li>
+<li>And one more time <code>bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10 generating linux/arm64</code>—this time it completes without errors. Yahoo! The next step is <code>make generate</code>—only to get buried under the avalanche of <code>sys/linux/blah.txt:332:32: string value &quot;bleh\x00&quot; exceeds buffer length 1</code>. No problem! This behavior was already described in <a href="https://github.com/google/syzkaller/issues/2749">this GitHub issue</a>. The suggested solution was <code>bin/syz-extract -os linux -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10 -build vuln_ioctl.txt</code> to extract constants just for one file. It was going well until it started to complain that a bunch of cross-compilers aren&rsquo;t installed.</li>
+<li>Easy-peasy! Just <code>sudo apt install gcc-s390x-linux-gnu gcc-riscv64-linux-gnu gcc-powerpc64le-linux-gnu gcc-mips64el-linux-gnu gcc-arm-linux-gnueabi gcc-x86-64-linux-gnu</code> and repeat the previous command. To get <code>vuln_ioctl.txt: IOCTL_CMD is unsupported on all arches (typo?)</code>.</li>
+<li>Everything&rsquo;s fine. I just copied <code>vuln_ioctl.h</code> to every possible include directory I could find. To get the same result.</li>
+<li><code>strace</code>ing <code>syz-extract</code> to make sure it reads <code>vuln_ioctl.h</code>. Well yeah&hellip; it reads it, alright. Just doesn&rsquo;t want to understand it.</li>
+<li>Something so devious my mind decided to wipe it out to make <code>bin/syz-extract -os=linux -sourcedir=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 -arch arm64 -build vuln_ioctl.txt</code> work again. And only to make <code>make generate</code> fail.</li>
+<li>At this point, it seemed like <code>syzkaller</code> doesn&rsquo;t want to play ball with the kernel module. But what if I statically compile it <em>into</em> the kernel? I changed the kernel build configuration, included the module in the kernel build process, and compiled it for good measure. Still&hellip; the result was the same.</li>
+<li>Thankfully, <code>syzkaller</code> provides a Docker container and a wrapper around it, <code>syz-env</code>. Unfortunately, the container image in the Google Docker repo was built only for x86_64. Piece of cake! The <code>Dockerfile</code> was available, so I removed everything that wasn&rsquo;t needed/was broken on arm64 and rebuilt it. I&rsquo;ll spare you the details, but it also failed. Some kind of problem with <code>flatbuffers</code>. No idea, probably a mistake on my side.</li>
+</ol>
+<p>At this point, I was starting to feel desperate. I wanted to make this work the right way. And the thing was that I did get a generated <code>.const</code> file, but the damn <code>???</code> were a total killjoy.</p>
+<pre tabindex="0"><code># contents of my vuln_ioctl.txt.const file:
+# Code generated by syz-sysgen. DO NOT EDIT.
+arches = arm64
+AT_FDCWD = arm64:18446744073709551516
+IOCTL_CMD = ???
+__NR_ioctl = arm64:29
+__NR_openat = arm64:56
+</code></pre><p>I mean, in this example, it would be fine to be a bad boy and violate the <code>DO NOT EDIT</code> instruction and insert the constant&rsquo;s value manually. But in a real-life scenario, I could deal with tens if not hundreds of constants, and this approach just would not be sustainable. Unless&hellip; I could make it sustainable.</p>
+<p>You see, I read in the docs that to extract constants, <code>syzkaller</code> actually compiles small programs with hardcoded constants&rsquo; values. Nobody forbids me to do the same, but with a much more crude implementation. It looked like a valid option that would allow me to unblock this mess. For that case, I just wrote the program manually (yes, all 7 lines!):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;vuln_ioctl.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;IOCTL_CMD=%ld</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, IOCTL_CMD);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>At with the magic result revealed to be <code>2148038193</code>, I quickly fixed the <code>.const</code> file and continued to the next step of the plan, which was</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>┌──<span style="color:#f92672">(</span>sl4v㉿netwatch-qemu<span style="color:#f92672">)</span>-<span style="color:#f92672">[</span>~/linux_kernel/syzkaller<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>└─$ make generate TARGETOS<span style="color:#f92672">=</span>linux SOURCEDIR<span style="color:#f92672">=</span>/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH<span style="color:#f92672">=</span>arm64 TARGETOS<span style="color:#f92672">=</span>linux TARGETARCH<span style="color:#f92672">=</span>arm64
+</span></span></code></pre></div><p>And finally, finally it was a command that finished without an error! That was definetely a good sign. Unfortunatelly, my luck ran out on the very next command.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>┌──<span style="color:#f92672">(</span>sl4v㉿netwatch-qemu<span style="color:#f92672">)</span>-<span style="color:#f92672">[</span>~/linux_kernel/syzkaller<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>└─$ make TARGETOS<span style="color:#f92672">=</span>linux SOURCEDIR<span style="color:#f92672">=</span>/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH<span style="color:#f92672">=</span>arm64 TARGETOS<span style="color:#f92672">=</span>linux TARGETARCH<span style="color:#f92672">=</span>arm64
+</span></span><span style="display:flex;"><span>--snip--
+</span></span><span style="display:flex;"><span>./pkg/flatrpc/flatrpc.h:11:41: error: static assertion failed: Non-compatible flatbuffers version included  static_assert<span style="color:#f92672">(</span>FLATBUFFERS_VERSION_MAJOR <span style="color:#f92672">==</span> <span style="color:#ae81ff">23</span> 
+</span></span><span style="display:flex;"><span>--snip--
+</span></span></code></pre></div><p><code>flatbuffers</code> strikes again! Further investigation showed that <code>syzkaller</code> ships with <code>flatbuffers</code> v.2, but my distro&rsquo;s package manage had only v.23. The solution seemed natural: just copy <code>flatbuffers v.23</code> headers to <code>syzkaller</code> include directory and rerun the <code>make</code>. Well:</p>
+<p><img src="./index.assets/image%201.png" alt="image.png"></p>
+<p>After some poking around, I decided to turn the tables and instead install the same <code>flatbuffers</code> version that <code>syzkaller</code> came with. Thankfully, at least bulding <code>flatbuffers</code> didn&rsquo;t cause too much troubles.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>git clone --branch v2.0.8 https://github.com/google/flatbuffers.git
+</span></span><span style="display:flex;"><span>cd flatbuffers
+</span></span><span style="display:flex;"><span>┌──<span style="color:#f92672">(</span>sl4v㉿netwatch-qemu<span style="color:#f92672">)</span>-<span style="color:#f92672">[</span>~/linux_kernel/flatbuffers<span style="color:#f92672">]</span>
+</span></span><span style="display:flex;"><span>└─$ cmake -DCMAKE_BUILD_TYPE<span style="color:#f92672">=</span>Release -G <span style="color:#e6db74">&#34;Unix Makefiles&#34;</span> -DFLATBUFFERS_BUILD_TESTS<span style="color:#f92672">=</span>OFF
+</span></span><span style="display:flex;"><span>make -j<span style="color:#e6db74">`</span>nproc<span style="color:#e6db74">`</span>
+</span></span><span style="display:flex;"><span>sudo make install
+</span></span></code></pre></div><p>It was time to try to build syzkaller once again. If it failed, I didn&rsquo;t have any other ideas or plans, probably it would mean a failed project for me. I was holding my breath while watching the progress of the final <code>make</code> inside the <code>syzkaller directory</code>. Weirdly, it just finished, no errors.</p>
+<p>Now I just had to copy <code>vuln_ioctl.txt</code> and <code>vuln_ioctl.txt.const</code> to the mac and repeat all the steps, including <code>flatbuffers</code>. And&hellip; it also worked. A strange feeling, but I thought that I might get used to it.</p>
+<p>My <code>syzkaller</code> configuration was going to be very similar to the first one I used with the exception of a white list of syscalls to fuzz to speed things up:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-json" data-lang="json"><span style="display:flex;"><span><span style="color:#e6db74">&#34;enable_syscalls&#34;</span><span style="color:#960050;background-color:#1e0010">:</span> [ <span style="color:#e6db74">&#34;openat$vuln_ioctl&#34;</span>, <span style="color:#e6db74">&#34;ioctl$IOCTL_CMD&#34;</span>, <span style="color:#e6db74">&#34;mmap&#34;</span>]
+</span></span></code></pre></div><p>After launching <code>syzkaller</code> with <code>bin/syz-manager -config ../syzkaller-vuln_ioctl.conf</code>, it brought up a web interface indicating that the process was started successfully.</p>
+<p><img src="./index.assets/image-20240907131308655.png" alt=""></p>
+<p>The number of executions per minute was about 60-80 initially, but quickly climbed down to 11 as my laptop begun overheating and thermal throttling. But better than nothing, alright? I also suspect that 12 exec/s means not 11 syscalls/s but 11 <code>syzkaller</code> programs that consist of multiple syscalls.</p>
+<p>Nevertheless, it meant that I had to wait. After 30-60 minutes and several cups of delicious black tea <code>syzkaller</code> finally catched a crash!</p>
+<p><img src="./index.assets/image-20240907140835017.png" alt="image-20240907140835017"></p>
+<p>The logs saved by <code>syzkaller</code> are the same that I got when triggering the vulnerability with <code>vuln_ioctl_client</code>, which means the crash was exactly the crash I was after! And it means that this story has finally arrived to</p>
+<h1 id="conclusion">Conclusion</h1>
+<p>Yes, it&rsquo;s 100% possible to use arm64 mac as a host machine for <code>syzkaller</code>, and it&rsquo;s also possible to fuzz an out-of-tree kernel module. Would anybody sane use this combo to do some serious fuzzing? Probably not, but we don&rsquo;t choose the easy path!</p>
+<p>There&rsquo;s still some work to be done:</p>
+<ol>
+<li>I&rsquo;m not sure that coverage worked like it&rsquo;s supposed to (in the WebUI screenshot you can see that coverage sits at 0).</li>
+<li>Reproduction with <code>syz-execprog</code> didn&rsquo;t work at all.</li>
+<li>Although the vulnerable module was built with KASAN, the crash log shows that the crash is triggered not by KASAN, but in a check somewhere deep inside of <code>copy_from_user</code>. But that&rsquo;s most likely how it&rsquo;s supposed to go.</li>
+<li>Check if HW acceleration is on for qemu.</li>
+<li>Try out Hardware Tag-Based KASAN and check if less coverage worth it for performance benefit.</li>
+</ol>
+<p>But that&rsquo;s for some time in the future. For now, tune in for part 2 where I&rsquo;ll fuzz something more interesting!</p>
+
+</div>
+
+
+    </main>
+
+    
+      
+    
+  </body>
+</html>

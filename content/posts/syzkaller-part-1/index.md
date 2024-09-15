@@ -1,6 +1,6 @@
 +++
 title = 'Finding Bugs in Kernel. Part 1: Crashing a Vulnerable Driver with Syzkaller'
-date = 2024-09-17
+date = 2024-09-15
 draft = false
 
 +++

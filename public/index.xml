@@ -6,8 +6,15 @@
     <description>Recent content on Slava Moskvin</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Tue, 10 Sep 2024 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 15 Sep 2024 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://slavamoskvin.com/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Finding Bugs in Kernel. Part 1: Crashing a Vulnerable Driver with Syzkaller</title>
+      <link>https://slavamoskvin.com/finding-bugs-in-kernel.-part-1-crashing-a-vulnerable-driver-with-syzkaller/</link>
+      <pubDate>Sun, 15 Sep 2024 00:00:00 +0000</pubDate>
+      <guid>https://slavamoskvin.com/finding-bugs-in-kernel.-part-1-crashing-a-vulnerable-driver-with-syzkaller/</guid>
+      <description>syzkaller is one of the best fuzzers for the Linux kernel. It supports coverage (through KCOV) and provides a way to declaratively describe syscalls you want to fuzz. It also highly encourages you to use KASAN (and you can even use more sanitizers supported by the kernel). We got to know KASAN in the previous post and it&amp;rsquo;s a really good thing that allows you to catch more bugs during fuzzing.</description>
+    </item>
     <item>
       <title>Hunting Bugs in Linux Kernel With KASAN: How to Use it &amp; What&#39;s the Benefit?</title>
       <link>https://slavamoskvin.com/hunting-bugs-in-linux-kernel-with-kasan-how-to-use-it-whats-the-benefit/</link>
