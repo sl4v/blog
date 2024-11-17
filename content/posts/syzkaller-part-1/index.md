@@ -84,7 +84,7 @@ And managed to build all important stuff, but not the `executor`—this one gets
 And then I just copied it to the host.
 
 ```bash
-scp sl4v@192.168.65.7:/home/sl4v/linux_kernel/syzkaller/bin/linux_arm64/syz-executor bin/linux_arm64
+scp user@192.168.65.7:/home/user/linux_kernel/syzkaller/bin/linux_arm64/syz-executor bin/linux_arm64
 ```
 
 With everything set up, I wrote this simple config:
@@ -94,18 +94,18 @@ With everything set up, I wrote this simple config:
     "name": "QEMU-aarch64",
     "target": "linux/arm64",
     "http": ":56700",
-    "workdir": "/Users/sl4v/proj/linux_kernel/syzkaller_workdir",
-    "kernel_obj": "/Users/sl4v/proj/linux_kernel/linux-6.8.12-builddir/media/sl4v/linux_disk/syzkaller/linux-6.8.12",
-    "syzkaller": "/Users/sl4v/proj/linux_kernel/syzkaller",
-    "image": "/Users/sl4v/proj/linux_kernel/rootfs.ext3",
-    "sshkey": "/Users/sl4v/.ssh/id_rsa",
+    "workdir": "/Users/user/proj/linux_kernel/syzkaller_workdir",
+    "kernel_obj": "/Users/user/proj/linux_kernel/linux-6.8.12-builddir/media/user/linux_disk/syzkaller/linux-6.8.12",
+    "syzkaller": "/Users/user/proj/linux_kernel/syzkaller",
+    "image": "/Users/user/proj/linux_kernel/rootfs.ext3",
+    "sshkey": "/Users/user/.ssh/id_rsa",
     "procs": 8,
     "type": "qemu",
     "vm": {
         "count": 4,
         "qemu": "/opt/homebrew/bin/qemu-system-aarch64",
         "cmdline": "console=ttyAMA0 root=/dev/vda",
-        "kernel": "/Users/sl4v/proj/linux_kernel/Image",
+        "kernel": "/Users/user/proj/linux_kernel/Image",
         "cpu": 2,
         "mem": 2048
     }
@@ -209,7 +209,7 @@ ioctl_arg {
 Notice that the description uses constants `AT_FDCWD` and `IOCTL_CMD`, so I needed to add my header file `vuln_ioctl.h`somewhere `syzkaller` is aware of.
 
 ```bash
-# in /media/sl4v/linux_disk/syzkaller/linux-6.8.12
+# in /media/user/linux_disk/syzkaller/linux-6.8.12
 $ cp vuln_ioctl/vuln_ioctl.h ./include/
 ```
 
@@ -217,15 +217,15 @@ The next step was to execute `make extract` so that `syzkaller` can extract all 
 
 Here's a list of what I've tried:
 
-1. `make extract TARGETOS=linux SOURCEDIR=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64` - just a bunch of errors in return.
+1. `make extract TARGETOS=linux SOURCEDIR=/media/user/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64` - just a bunch of errors in return.
 2. Recompiling the kernel after each failed `make extract` attempt (it turned out that `make extract` deletes build artifacts). Totally useless as `make extract` doesn't rely on built files.
-3. `bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10` - to extract constants only for arm64. Got `error: ‘KASAN_SHADOW_SCALE_SHIFT’ undeclared`. Solved it with `make ARCH=arm64 defconfig` in the kernel directory. Also, it turned out that `defconfig` is also necessary after each `make extract` attempt.
-4. Once again `bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10` only to get `‘struct common_audit_data’ has no member named ‘smack_audit_data’`. This one is super easy—just add `CONFIG_SECURITY_SMACK=y` to `.config`.
-5. And one more time `bin/syz-extract -os linux -arch arm64 -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -builddir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10 generating linux/arm64`—this time it completes without errors. Yahoo! The next step is `make generate`—only to get buried under the avalanche of `sys/linux/blah.txt:332:32: string value "bleh\x00" exceeds buffer length 1`. No problem! This behavior was already described in [this GitHub issue](https://github.com/google/syzkaller/issues/2749). The suggested solution was `bin/syz-extract -os linux -sourcedir /media/sl4v/linux_disk/syzkaller/linux-6.8.12 -vv 10 -build vuln_ioctl.txt` to extract constants just for one file. It was going well until it started to complain that a bunch of cross-compilers aren't installed.
+3. `bin/syz-extract -os linux -arch arm64 -sourcedir /media/user/linux_disk/syzkaller/linux-6.8.12 -builddir /media/user/linux_disk/syzkaller/linux-6.8.12 -vv 10` - to extract constants only for arm64. Got `error: ‘KASAN_SHADOW_SCALE_SHIFT’ undeclared`. Solved it with `make ARCH=arm64 defconfig` in the kernel directory. Also, it turned out that `defconfig` is also necessary after each `make extract` attempt.
+4. Once again `bin/syz-extract -os linux -arch arm64 -sourcedir /media/user/linux_disk/syzkaller/linux-6.8.12 -builddir /media/user/linux_disk/syzkaller/linux-6.8.12 -vv 10` only to get `‘struct common_audit_data’ has no member named ‘smack_audit_data’`. This one is super easy—just add `CONFIG_SECURITY_SMACK=y` to `.config`.
+5. And one more time `bin/syz-extract -os linux -arch arm64 -sourcedir /media/user/linux_disk/syzkaller/linux-6.8.12 -builddir /media/user/linux_disk/syzkaller/linux-6.8.12 -vv 10 generating linux/arm64`—this time it completes without errors. Yahoo! The next step is `make generate`—only to get buried under the avalanche of `sys/linux/blah.txt:332:32: string value "bleh\x00" exceeds buffer length 1`. No problem! This behavior was already described in [this GitHub issue](https://github.com/google/syzkaller/issues/2749). The suggested solution was `bin/syz-extract -os linux -sourcedir /media/user/linux_disk/syzkaller/linux-6.8.12 -vv 10 -build vuln_ioctl.txt` to extract constants just for one file. It was going well until it started to complain that a bunch of cross-compilers aren't installed.
 6. Easy-peasy! Just `sudo apt install gcc-s390x-linux-gnu gcc-riscv64-linux-gnu gcc-powerpc64le-linux-gnu gcc-mips64el-linux-gnu gcc-arm-linux-gnueabi gcc-x86-64-linux-gnu` and repeat the previous command. To get `vuln_ioctl.txt: IOCTL_CMD is unsupported on all arches (typo?)`.
 7. Everything's fine. I just copied `vuln_ioctl.h` to every possible include directory I could find. To get the same result.
 8. `strace`ing `syz-extract` to make sure it reads `vuln_ioctl.h`. Well yeah... it reads it, alright. Just doesn't want to understand it.
-9. Something so devious my mind decided to wipe it out to make `bin/syz-extract -os=linux -sourcedir=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 -arch arm64 -build vuln_ioctl.txt` work again. And only to make `make generate` fail.
+9. Something so devious my mind decided to wipe it out to make `bin/syz-extract -os=linux -sourcedir=/media/user/linux_disk/syzkaller/linux-6.8.12 -arch arm64 -build vuln_ioctl.txt` work again. And only to make `make generate` fail.
 10. At this point, it seemed like `syzkaller` doesn't want to play ball with the kernel module. But what if I statically compile it *into* the kernel? I changed the kernel build configuration, included the module in the kernel build process, and compiled it for good measure. Still... the result was the same.
 11. Thankfully, `syzkaller` provides a Docker container and a wrapper around it, `syz-env`. Unfortunately, the container image in the Google Docker repo was built only for x86_64. Piece of cake! The `Dockerfile` was available, so I removed everything that wasn't needed/was broken on arm64 and rebuilt it. I'll spare you the details, but it also failed. Some kind of problem with `flatbuffers`. No idea, probably a mistake on my side.
 
@@ -258,15 +258,15 @@ int main() {
 At with the magic result revealed to be `2148038193`, I quickly fixed the `.const` file and continued to the next step of the plan, which was
 
 ```bash
-┌──(sl4v㉿netwatch-qemu)-[~/linux_kernel/syzkaller]
-└─$ make generate TARGETOS=linux SOURCEDIR=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64
+┌──(user㉿netwatch-qemu)-[~/linux_kernel/syzkaller]
+└─$ make generate TARGETOS=linux SOURCEDIR=/media/user/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64
 ```
 
 And finally, finally it was a command that finished without an error! That was definetely a good sign. Unfortunatelly, my luck ran out on the very next command.
 
 ```bash
-┌──(sl4v㉿netwatch-qemu)-[~/linux_kernel/syzkaller]
-└─$ make TARGETOS=linux SOURCEDIR=/media/sl4v/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64
+┌──(user㉿netwatch-qemu)-[~/linux_kernel/syzkaller]
+└─$ make TARGETOS=linux SOURCEDIR=/media/user/linux_disk/syzkaller/linux-6.8.12 HOSTARCH=arm64 TARGETOS=linux TARGETARCH=arm64
 --snip--
 ./pkg/flatrpc/flatrpc.h:11:41: error: static assertion failed: Non-compatible flatbuffers version included  static_assert(FLATBUFFERS_VERSION_MAJOR == 23 
 --snip--
@@ -281,7 +281,7 @@ After some poking around, I decided to turn the tables and instead install the s
 ```bash
 git clone --branch v2.0.8 https://github.com/google/flatbuffers.git
 cd flatbuffers
-┌──(sl4v㉿netwatch-qemu)-[~/linux_kernel/flatbuffers]
+┌──(user㉿netwatch-qemu)-[~/linux_kernel/flatbuffers]
 └─$ cmake -DCMAKE_BUILD_TYPE=Release -G "Unix Makefiles" -DFLATBUFFERS_BUILD_TESTS=OFF
 make -j`nproc`
 sudo make install
