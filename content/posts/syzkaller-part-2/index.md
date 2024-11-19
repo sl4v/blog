@@ -67,8 +67,6 @@ static const struct genl_small_ops tipc_genl_compat_ops[] = {
 
 From the code, we can see that there’s essentially one operation callback: `tipc_nl_compat_recv`, which receives Netlink messages. The main dispatcher for these messages is the `tipc_nl_compat_handle` function, which uses a `switch` statement to handle `TIPC_CMD_*` commands.
 
-From the code we can see that there's essentially one operation callback - `tipc_nl_compat_recv` that recieves netlink messages. And the main dispatcher of the messages is `tipc_nl_compat_handle` with a switch cases for `TIPC_CMD_*` commands.
-
 ![](./syzkaller-TIPC.assets/diagram-1.png)
 
 That was the legacy Netlink support, but what about the newer version? We can observe a similar code flow in [net/tipc/netlink.c](https://github.com/torvalds/linux/blob/master/net/tipc/netlink.c). The `tipc_netlink_start` function registers the `tipc_genl_family` with an operations array, `tipc_genl_v2_ops`.
