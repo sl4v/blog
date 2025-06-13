@@ -9,6 +9,7 @@ draft = false
 This vulnerability allows a remote, unauthenticated attacker to trigger a NULL pointer dereference in the `ksmbd` Linux kernel subsystem, leading to a system crash or hang. Only systems with the `ksmbd` kernel module loaded or built-in are affected.
 
 - **ZDI ID**: ZDI-25-310
+- **CVE**: CVE-2025–22037
 - **CVSS Score**: 6.8 ([AV:N/AC:H/PR:N/UI:N/S:C/C:N/I:N/A:H](https://nvd.nist.gov/vuln-metrics/cvss/v3-calculator?vector=AV:N/AC:H/PR:N/UI:N/S:C/C:N/I:N/A:H&version=3.0))
 - **Fixed in**: [commit c8b5b7c](https://github.com/torvalds/linux/commit/c8b5b7c5da7d0c31c9b7190b4a7bba5281fc4780)
 
