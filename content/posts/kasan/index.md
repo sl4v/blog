@@ -137,6 +137,7 @@ The boot should take much more time and memory—that’s the price we have to p
 
 ```bash
 $ sudo dmesg | grep -i kasan
+[    0.000000] kasan: KernelAddressSanitizer initialized (generic)
 ```
 
 Phew, I hope you didn’t forget why we came here. Once we have a kernel with KASAN up and running, we can load the target module in question and execute our PoC to get the following output:
